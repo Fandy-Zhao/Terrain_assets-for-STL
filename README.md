@@ -226,8 +226,18 @@ terrain_dict = {
 |------|--------|------|
 | `--stl_path` | `T_step.STL` | STL 文件路径 |
 | `--output` | `heightmap.npy` | 输出的 heightmap 文件路径 |
-| `--terrain_size` | `12.0` | 地形尺寸 [meters]，地形是正方形 |
+| `--terrain_size` | `12.0` | 地形尺寸 [meters]，地形是正方形。当使用 `--auto_terrain_size` 时此参数被忽略 |
 | `--resolution` | `0.02` | 分辨率 [meters] |
+| `--z_offset` | `0.0` | z 轴偏移量 [meters]，mesh 中心在 z=0 平面 |
+| `--rotation_angle` | `0.0` | 围绕中心轴顺时针旋转角度 [度]，默认不旋转 |
+| `--x_offset` | `0.0` | 在 x 轴平移距离 [meters]，正数代表往图像右方移动 |
+| `--y_offset` | `0.0` | 在 y 轴平移距离 [meters]，正数代表往图像上方移动 |
+| `--auto_terrain_size` | `False` | **推荐使用**。自动根据模型实际尺寸计算 terrain_size，确保模型尺寸准确 |
+| `--padding` | `0.5` | 边缘留白 [meters]，仅在 `--auto_terrain_size` 时有效 |
+
+**重要提示**：
+- 使用 `--auto_terrain_size` 可以确保 heightmap 的尺寸与模型实际尺寸一致，避免在不同分辨率下模型尺寸不准确的问题
+- 如果不使用 `--auto_terrain_size`，需要手动设置合适的 `terrain_size`，否则模型可能在 heightmap 中占用很小的区域
 
 **重要提示**：
 - `terrain_size` 应与配置文件中的 `terrain_length` 和 `terrain_width` 保持一致
@@ -261,14 +271,53 @@ pip install "numpy<2" -i https://pypi.org/simple
 
 #### 2. 生成 heightmap
 
+**推荐用法（自动计算 terrain_size，确保模型尺寸准确）：**
 ```bash
 cd legged_gym/legged_gym/terrain_assets
+python generate_heightmap.py \
+    --stl_path T_step.STL \
+    --output heightmap.npy \
+    --resolution 0.02 \
+    --auto_terrain_size \
+    --padding 0.5
+```
+
+**使用旋转和平移（推荐配合 auto_terrain_size）：**
+```bash
+# 顺时针旋转 45 度
+python generate_heightmap.py \
+    --stl_path T_step.STL \
+    --output heightmap_rotated.npy \
+    --resolution 0.02 \
+    --auto_terrain_size \
+    --rotation_angle 45.0
+
+# 旋转并平移
+python generate_heightmap.py \
+    --stl_path T_step.STL \
+    --output heightmap_transformed.npy \
+    --resolution 0.02 \
+    --auto_terrain_size \
+    --rotation_angle 30.0 \
+    --x_offset 1.0 \
+    --y_offset 0.5
+```
+
+**手动指定 terrain_size（需要确保 terrain_size 足够大）：**
+```bash
 python generate_heightmap.py \
     --stl_path T_step.STL \
     --output heightmap.npy \
     --terrain_size 18.0 \
     --resolution 0.02
 ```
+
+**验证输出信息：**
+生成 heightmap 后，请检查输出信息中的以下内容，确认模型尺寸准确：
+- `Mesh 实际尺寸`: 模型的真实物理尺寸
+- `Heightmap 物理尺寸`: heightmap 的物理尺寸（应与 terrain_size 一致）
+- `模型在 heightmap 中的占用`: 模型占用的像素数
+- `从像素计算的模型尺寸`: 应该与 `Mesh 实际尺寸` 一致
 
 #### 3. 配置地形
 
@@ -382,11 +431,11 @@ python test_stl_framework.py
 使用`visualize_heightmap.py`预览 heightmap 图像
 ```bash
 cd legged_gym/legged_gym/terrain_assets
-python visualize_heightmap.py --heightmap_path heightmap.npy --save_path heightmap_visualization.png --view_type 2d
+python visualize_heightmap.py --input heightmap.npy --save_path heightmap_visualization.png --view_type 2d
 ```
 
 **关键参数**
-- `--heightmap_path`: heightmap 文件路径
+- `--input`: heightmap 文件路径
 - `--save_path`: 保存图像路径（默认: `heightmap_visualization.png`）
 - `--view_type`: 视图类型（`2d` 或 `3d`，默认: `2d`）
 
@@ -433,6 +482,44 @@ python scripts/play.py --task=a1_parkour
 | 0.01m | 高 | 大 | 需要高精度观测 |
 | 0.02m | 中 | 中 | **推荐** |
 | 0.05m | 低 | 小 | 快速测试 |
+
+#### 尺寸准确性
+
+**问题**：如果手动指定 `terrain_size` 且不使用 `--auto_terrain_size`，可能会导致模型在 heightmap 中的尺寸不准确。
+
+**示例**：
+- 模型实际尺寸：2.8m × 0.4m
+- 手动设置 terrain_size：12m
+- 当 resolution = 0.02m 时，heightmap = 600 × 600 像素
+- 模型在 heightmap 中只占用：140 × 20 像素（很小一部分）
+
+**解决方案**：使用 `--auto_terrain_size` 参数
+
+```bash
+# 自动计算 terrain_size，确保模型尺寸准确
+python generate_heightmap.py \
+    --stl_path T_step.STL \
+    --output heightmap.npy \
+    --resolution 0.02 \
+    --auto_terrain_size \
+    --padding 0.5
+```
+
+这样会自动：
+1. 计算模型的实际尺寸（考虑旋转）
+2. 加上 padding 留白
+3. 计算合适的 terrain_size
+4. 确保 heightmap 的尺寸与模型尺寸匹配
+
+**输出验证**：
+生成 heightmap 后，检查输出信息：
+```
+Mesh 实际尺寸: 2.800m × 0.400m
+自动计算 terrain_size: 4.000m × 4.000m (padding: 0.500m)
+Heightmap 物理尺寸: 4.000m × 4.000m
+模型在 heightmap 中的占用: 140 × 20 pixels
+从像素计算的模型尺寸: 2.800m × 0.400m  ✓ 与实际尺寸一致
+```
 
 #### 地形尺寸
 
